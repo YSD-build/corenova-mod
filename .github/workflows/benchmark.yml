@@ -1,5 +1,6 @@
 name: CoreNova CI
 
+#2026.6.15 one
 on:
   push:
     branches: [ "main" ]
