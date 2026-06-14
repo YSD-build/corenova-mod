@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "corenova",
+  "version": "${version}",
+  "name": "CoreNova",
+  "description": "Ultimate optimization mod",
+  "authors": ["YSD-build"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.ysd.corenova.CoreNovaMod"
+    ]
+  },
+  "mixins": [
+    "mixins.corenova.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "1.21.1",
+    "java": ">=21"
+  }
+}
