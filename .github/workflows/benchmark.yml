@@ -1,6 +1,5 @@
 name: CoreNova CI
 
-#2026.6.15 one
 on:
   push:
     branches: [ "main" ]
@@ -19,7 +18,7 @@ jobs:
       - name: Build with Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: '8.5'
+          gradle-version: '8.10.2'        # ← 改为 8.10.2（满足 loom 要求）
           arguments: build
       - name: Upload mod artifact
         uses: actions/upload-artifact@v4
