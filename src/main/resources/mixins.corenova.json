@@ -4,9 +4,10 @@
   "package": "com.ysd.corenova.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "WorldRendererMixin",
-    "EntityRenderDispatcherMixin"
+    "MixinMinecraftClient"
   ],
+  "client": [],
+  "server": [],
   "injectors": {
     "defaultRequire": 1
   }
