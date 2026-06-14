@@ -3,15 +3,8 @@
   "minVersion": "0.8",
   "package": "com.ysd.corenova.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [
-    "VideoSettingsScreenMixin",
-    "EntityRenderDispatcherMixin",
-    "MobEntityMixin",
-    "WorldRendererMixin"
-  ],
-  "client": [
-    "OptionsScreenMixin"
-  ],
+  "mixins": [],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }
