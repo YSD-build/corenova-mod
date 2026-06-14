@@ -11,9 +11,9 @@
     "main": [
       "com.ysd.corenova.CoreNovaMod"
     ],
-    "client": [
-      "com.ysd.corenova.CoreNovaClient"
-    ]
+//    "client": [
+//      "com.ysd.corenova.CoreNovaClient"
+//    ]
   },
   "mixins": [
     "mixins.corenova.json"
