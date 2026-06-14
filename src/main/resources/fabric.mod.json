@@ -10,8 +10,14 @@
   "entrypoints": {
     "main": [
       "com.ysd.corenova.CoreNovaMod"
+    ],
+    "client": [
+      "com.ysd.corenova.CoreNovaClient"
     ]
   },
+  "mixins": [
+    "mixins.corenova.json"
+  ],
   "depends": {
     "fabricloader": ">=0.15.0",
     "minecraft": ">=1.21 <=1.21.99",
