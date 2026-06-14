@@ -1,21 +1,13 @@
-name: CoreNova Full Auto Benchmark
+name: CoreNova CI
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
 
-env:
-  MC_VERSION: "1.21.11"
-  FABRIC_LOADER_VERSION: "0.16.7"
-  FABRIC_API_VERSION: "0.102.0+1.21.11"
-
 jobs:
-  # ==================== 1. 构建你的模组 ====================
-  build-your-mod:
+  build:
     runs-on: ubuntu-latest
-    outputs:
-      jar_path: ${{ steps.upload.outputs.jar_path }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
@@ -23,172 +15,13 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '21'
-
-      # 使用 Gradle Wrapper 自动生成（如果仓库里没有 gradlew 也能工作）
-      - name: Build mod with Gradle
+      - name: Build with Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
+          gradle-version: '8.5'
           arguments: build
-
-      - name: Locate built jar
-        id: locate
-        run: |
-          JAR=$(find build/libs -name "*.jar" ! -name "*-dev.jar" | head -n 1)
-          echo "jar_path=$JAR" >> $GITHUB_OUTPUT
-          echo "Found jar: $JAR"
-
       - name: Upload mod artifact
-        id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: your-mod
-          path: ${{ steps.locate.outputs.jar_path }}
-
-  # ==================== 2. 获取最新 Sodium & OptiFine ====================
-  fetch-latest-mods:
-    runs-on: ubuntu-latest
-    outputs:
-      sodium_url: ${{ steps.sodium.outputs.url }}
-      optifine_url: ${{ steps.optifine.outputs.url }}
-    steps:
-      - name: Get Sodium download URL (Modrinth API)
-        id: sodium
-        run: |
-          # 获取适配指定 MC 版本的最新版 Sodium
-          URL=$(curl -s "https://api.modrinth.com/v2/project/AANobbMI/version" \
-            | jq -r --arg MC "${{ env.MC_VERSION }}" \
-            '.[] | select(.game_versions[] == $MC) | .files[0].url' | head -n 1)
-          if [ -z "$URL" ]; then
-            # 如果没有精确匹配，尝试包含该版本
-            URL=$(curl -s "https://api.modrinth.com/v2/project/AANobbMI/version" \
-              | jq -r --arg MC "${{ env.MC_VERSION }}" \
-              '.[] | select(.game_versions[] | contains($MC)) | .files[0].url' | head -n 1)
-          fi
-          echo "url=$URL" >> $GITHUB_OUTPUT
-
-      - name: Get OptiFine download URL (稳定镜像)
-        id: optifine
-        run: |
-          # 使用 BMCLAPI 镜像获取 OptiFine 最新版（支持指定版本）
-          # 注意：OptiFine 版本命名可能与 MC 版本不完全一致，这里先获取列表再匹配
-          RESP=$(curl -s "https://bmclapi2.bangbang93.com/optifine/versionlist")
-          # 提取匹配 MC_VERSION 的最新版
-          LATEST=$(echo "$RESP" | jq -r --arg MC "${{ env.MC_VERSION }}" \
-            '.[] | select(.mcversion == $MC) | .version' | sort -V | tail -n 1)
-          if [ -n "$LATEST" ]; then
-            URL="https://bmclapi2.bangbang93.com/optifine/$LATEST/download"
-          else
-            # 回退到通用最新
-            URL="https://bmclapi2.bangbang93.com/optifine/latest/download"
-          fi
-          echo "url=$URL" >> $GITHUB_OUTPUT
-
-  # ==================== 3. 运行真实基准测试 ====================
-  run-benchmark:
-    needs: [build-your-mod, fetch-latest-mods]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        mod-type: ["your-mod", "sodium", "optifine"]
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Install dependencies (Xvfb, wget, jq)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb wget jq
-
-      - name: Download Fabric loader and API
-        run: |
-          mkdir -p test-env/mods
-          # 下载 Fabric 安装器
-          wget -O fabric-installer.jar "https://meta.fabricmc.net/v2/versions/loader/${{ env.MC_VERSION }}/${{ env.FABRIC_LOADER_VERSION }}/server/jar"
-          # 下载 Fabric API（可选，很多模组依赖）
-          wget -O test-env/mods/fabric-api.jar "https://cdn.modrinth.com/data/P7dR8mSH/versions/${{ env.FABRIC_API_VERSION }}/fabric-api-${{ env.FABRIC_API_VERSION }}.jar"
-
-      - name: Download HeadlessMC
-        run: |
-          wget -O headlessmc-launcher.jar "https://github.com/3arthqu4ke/headlessmc/releases/download/v3.0/headlessmc-launcher.jar"
-
-      - name: Prepare mods for this test
-        run: |
-          mkdir -p test-env/mods
-          case "${{ matrix.mod-type }}" in
-            "your-mod")
-              # 下载之前构建的模组
-              mkdir -p download
-              cd download
-              wget --header="Accept: application/zip" -q -O your-mod.zip "${{ needs.build-your-mod.outputs.jar_path }}"
-              unzip -j your-mod.zip -d ../test-env/mods/
-              cd ..
-              ;;
-            "sodium")
-              wget -O test-env/mods/sodium.jar "${{ needs.fetch-latest-mods.outputs.sodium_url }}"
-              ;;
-            "optifine")
-              wget -O test-env/mods/optifine.jar "${{ needs.fetch-latest-mods.outputs.optifine_url }}"
-              ;;
-          esac
-          # 添加一个简单的 FPS 测试模组（这里使用我们自己写的一个小脚本，或者可以用 Rift 的 FPS 计数器模组）
-          # 实际上 HeadlessMC 自带 fps 命令，不需要额外模组
-
-      - name: Run Minecraft benchmark (HeadlessMC + Xvfb)
-        run: |
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 1024x768x24 &
-          XVFB_PID=$!
-          sleep 3
-
-          # 使用 HeadlessMC 启动 Fabric 客户端，执行 fps 测试命令
-          # 注意：这里需要 Mojang 账号。强烈建议使用 GitHub Secrets 存储邮箱和密码
-          # 如果你没有设置 Secrets，可以跳过登录，但只能玩演示模式，可能影响测试准确性
-          if [ -n "${{ secrets.MC_EMAIL }}" ] && [ -n "${{ secrets.MC_PASSWORD }}" ]; then
-            java -jar headlessmc-launcher.jar login "${{ secrets.MC_EMAIL }}" "${{ secrets.MC_PASSWORD }}"
-          fi
-
-          # 启动游戏并运行测试：进入世界，等待10秒，然后执行 /fps 命令每1秒采样，持续60秒
-          # 这里使用 headlessmc 的 -cmd 参数发送命令
-          java -jar headlessmc-launcher.jar launch fabric:${{ env.MC_VERSION }} -lwjgl -cmd \
-            "msg \"Testing ${{ matrix.mod-type }}\"; wait 5s; create world; wait 10s; fpstest 60; wait 65s; stop" \
-            2>&1 | tee test_output.log
-
-          kill $XVFB_PID
-
-      - name: Parse FPS results
-        id: parse
-        run: |
-          # 从日志中提取平均 FPS（假设 HeadlessMC 的 fpstest 命令输出 "Average FPS: xxx"）
-          AVG_FPS=$(grep -oP 'Average FPS: \K[0-9.]+' test_output.log | tail -n 1)
-          if [ -z "$AVG_FPS" ]; then
-            # 如果没有找到，尝试其他格式
-            AVG_FPS=$(grep -oP 'FPS: \K[0-9.]+' test_output.log | awk '{sum+=$1; count++} END {if(count>0) print sum/count; else print 0}')
-          fi
-          echo "avg_fps=$AVG_FPS" >> $GITHUB_OUTPUT
-          mkdir -p results
-          echo "{\"mod\":\"${{ matrix.mod-type }}\", \"avg_fps\":$AVG_FPS}" > results/result.json
-
-      - name: Upload test result
-        uses: actions/upload-artifact@v4
-        with:
-          name: result-${{ matrix.mod-type }}
-          path: results/result.json
-
-  # ==================== 4. 汇总对比表格 ====================
-  summarize:
-    needs: run-benchmark
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all results
-        uses: actions/download-artifact@v4
-        with:
-          path: all-results
-
-      - name: Build comparison table
-        run: |
-          echo "## 🔥 Cor
+          name: corenova-mod
+          path: build/libs/*.jar
