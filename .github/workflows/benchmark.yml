@@ -1,0 +1,137 @@
+name: Auto Benchmark against Latest Sodium & OptiFine
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:          # 允许手动触发
+
+jobs:
+  # 任务1：构建你的模组
+  build-your-mod:
+    runs-on: ubuntu-latest
+    outputs:
+      mod_jar_path: ${{ steps.get_jar.outputs.path }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # 如果你已经有构建脚本（如 gradle），请替换此处
+      - name: Build your mod
+        run: |
+          # 示例：假设你有一个 gradle 项目
+          chmod +x ./gradlew
+          ./gradlew build
+          # 记录生成的 jar 文件路径
+          echo "PATH=$(find build/libs -name '*.jar' ! -name '*-dev.jar' | head -n 1)" >> $GITHUB_OUTPUT
+        id: get_jar
+
+      - name: Upload your mod artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: your-mod
+          path: ${{ steps.get_jar.outputs.PATH }}
+
+  # 任务2：动态获取 Sodium 和 OptiFine 最新版
+  fetch-latest-mods:
+    runs-on: ubuntu-latest
+    outputs:
+      sodium_url: ${{ steps.sodium.outputs.url }}
+      optifine_url: ${{ steps.optifine.outputs.url }}
+    steps:
+      - name: Get Sodium download URL
+        id: sodium
+        run: |
+          URL=$(curl -s https://api.modrinth.com/v2/project/AANobbMI/version \
+            | jq -r '.[] | select(.game_versions[] | contains("1.21.11")) | .files[0].url' | head -n 1)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Get OptiFine download URL
+        id: optifine
+        run: |
+          # 使用非官方 API 获取最新 OptiFine 下载链接（更稳定）
+          API_URL="https://optifine-api.fly.dev/versions/latest"
+          URL=$(curl -s $API_URL | jq -r '.downloadUrl')
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+  # 任务3：运行对比测试（矩阵测试）
+  run-benchmark:
+    needs: [build-your-mod, fetch-latest-mods]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mod_type: ["your-mod", "sodium", "optifine"]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Prepare environment
+        run: |
+          mkdir -p test-env/mods
+          mkdir -p test-env/results
+
+      - name: Download your mod artifact (if needed)
+        if: matrix.mod_type == 'your-mod'
+        uses: actions/download-artifact@v4
+        with:
+          name: your-mod
+          path: test-env/mods/
+
+      - name: Download Sodium latest
+        if: matrix.mod_type == 'sodium'
+        run: |
+          wget -O test-env/mods/sodium.jar "${{ needs.fetch-latest-mods.outputs.sodium_url }}"
+
+      - name: Download OptiFine latest
+        if: matrix.mod_type == 'optifine'
+        run: |
+          wget -O test-env/mods/optifine.jar "${{ needs.fetch-latest-mods.outputs.optifine_url }}"
+
+      # 此处模拟测试：实际需要运行 Minecraft 并记录 FPS
+      # 由于 GitHub Actions 无法直接运行有 GUI 的 Minecraft 客户端，这里用脚本模拟生成假数据
+      - name: Run benchmark simulation
+        run: |
+          cd test-env
+          # 模拟测试：生成一个 JSON 结果文件
+          AVG_FPS=0
+          case "${{ matrix.mod_type }}" in
+            "your-mod") AVG_FPS=180 ;;
+            "sodium")   AVG_FPS=150 ;;
+            "optifine") AVG_FPS=120 ;;
+          esac
+          echo "{\"mod\": \"${{ matrix.mod_type }}\", \"avg_fps\": $AVG_FPS}" > results/${{ matrix.mod_type }}.json
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.mod_type }}
+          path: test-env/results/
+
+  # 任务4：汇总并显示结果
+  show-results:
+    needs: run-benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results
+
+      - name: Generate comparison table
+        run: |
+          echo "## Benchmark Comparison (Simulated)" >> $GITHUB_STEP_SUMMARY
+          echo "| Mod | Average FPS |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-------------|" >> $GITHUB_STEP_SUMMARY
+          for dir in all-results/benchmark-*/; do
+            mod=$(basename "$dir" | sed 's/benchmark-//')
+            fps=$(cat "$dir"/*.json | jq -r '.avg_fps')
+            echo "| $mod | $fps |" >> $GITHUB_STEP_SUMMARY
+          done
